@@ -18,13 +18,16 @@ var (
 	border              = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 	left                = lipgloss.NewStyle().Align(lipgloss.Left)
 	center              = lipgloss.NewStyle().Align(lipgloss.Center)
-	headerTitleStyle    = lipgloss.NewStyle().Align(lipgloss.Center).Bold(true).Background(lipgloss.Color("54"))
-	headerSubtitleStyle = lipgloss.NewStyle().Align(lipgloss.Center).Italic(true).Background(lipgloss.Color("54"))
+	BgMagenta           = lipgloss.NewStyle().Background(lipgloss.Color("54"))
+	headerTitleStyle    = lipgloss.NewStyle().Align(lipgloss.Center).Bold(true)
+	headerSubtitleStyle = lipgloss.NewStyle().Align(lipgloss.Center).Italic(true)
 	// TODO: ASCII and Unicode default mode
 	// CSI    = bold.Render("CSI") // TODO: allow setting via --csi-chars=
 	// UIn = italic.Render("n") // TODO: allow setting via --user-input-chars=
 	CSI = "⍧"
 	UIn = "⎀"
+
+	textSizing bool // True if using Kitty's text sizing protocol
 )
 
 type model struct {
@@ -33,6 +36,11 @@ type model struct {
 }
 
 func (m model) Init() tea.Cmd {
+	if os.Getenv("KITTY_WINDOW_ID") != "" { // TODO: Check support correctly with Ansi Codes, don't hardcode Kitty
+		textSizing = true
+	} else {
+		textSizing = false
+	}
 	return nil
 }
 
@@ -48,20 +56,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 var SGRheaderTitle = "SGR: Select Graphical Rendition"
 
-func GetSGRheaderTitle() string {
-	if os.Getenv("KITTY_WINDOW_ID") != "" { // TODO: Check support correctly with Ansi Codes, don't hardcode Kitty
-		return headerTitleStyle.Render("\x1b]66;s=2;" + SGRheaderTitle + "\x07\n")
+func SGRheaderTitleWidth() int {
+	if textSizing == true {
+		return lipgloss.Width(SGRheaderTitle) * 2
 	} else {
-		return headerTitleStyle.Render("SGR: Select Graphical Rendition")
+		return lipgloss.Width(SGRheaderTitle)
+	}
+}
+
+func GetSGRheaderTitle() string {
+	if textSizing == true {
+		// Needs another \n for every size increment for correct alignment
+		var t strings.Builder
+		// t.WriteString("\x1b]66;s=2:w=0;")
+		t.WriteString("\x1b]66;s=3;S\x07\x1b]66;s=2:n=1:d=2:w=1:v=2;GR")
+		// t.WriteString(SGRheaderTitle)
+		t.WriteString("\x07\x1b[m GR\n")
+		return t.String()
+	} else {
+		return headerTitleStyle.Render(SGRheaderTitle)
 	}
 }
 
 func (m model) View() string {
 	// codes := []sgr.AnsiCode{
 
-	SGRheaderSubtitle := italic.Render("Usage: ") + headerSubtitleStyle.Width(lipgloss.Width(SGRheaderTitle)).Render(CSI+UIn+"m	SGRheaderTitle width: "+fmt.Sprintf("%v", (lipgloss.Width(SGRheaderTitle))))
-	SGRheader := border.Background(lipgloss.Color("54")).Render(GetSGRheaderTitle() + "\n" + SGRheaderSubtitle)
+	// SGRheaderSubtitle := "Usage: " + CSI + UIn + "m"
+	SGRheaderSubtitle := "Usage: " + center.Width(SGRheaderTitleWidth()-7).
+		Render(CSI+UIn+"m"+fmt.Sprintf("%v", SGRheaderTitleWidth()))
+
+	SGRheader := border.Render(lipgloss.
+		JoinVertical(lipgloss.Left, lipgloss.Place(SGRheaderTitleWidth(), 2, lipgloss.Center, lipgloss.Top,
+			GetSGRheaderTitle()),
+			SGRheaderSubtitle))
 	// view.WriteString(sgr.Underline.On.Apply() + "\x1b[58;5;124mThis is a test of the 256 color mode\x1b[0m")
+	if textSizing == true {
+		var b strings.Builder
+		b.WriteString("╭" + strings.Repeat("─", SGRheaderTitleWidth()+2) + "╮\n")
+		b.WriteString(border.BorderBottom(false).BorderTop(false).Width(0).Padding(0, 1).Render(GetSGRheaderTitle()))
+		b.WriteString("\n")
+		b.WriteString(border.Width(SGRheaderTitleWidth() + 2).BorderBottom(false).BorderTop(false).Align(lipgloss.Center).Render(SGRheaderSubtitle))
+		b.WriteString("\n╰" + strings.Repeat("─", SGRheaderTitleWidth()+2) + "╯")
+		SGRheader = b.String()
+		// SGRheader = lipgloss.JoinVertical(lipgloss.Left, b.String(), SGRheaderSubtitle)
+
+	}
 
 	var view strings.Builder
 	view.WriteString(SGRheader)
